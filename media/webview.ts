@@ -3,7 +3,13 @@ declare const acquireVsCodeApi: any;
 // restored state placeholder
 let restoredModel: any | undefined;
 let restoredUI:
-	| { leftTab?: string; previewTab?: string; search?: string }
+	| {
+			leftTab?: string;
+			previewTab?: string;
+			search?: string;
+			openCats?: Record<string, boolean>;
+			leftScroll?: number;
+	  }
 	| undefined;
 const vscode = acquireVsCodeApi();
 // try restore
@@ -147,6 +153,23 @@ window.addEventListener("message", (e) => {
 				const event = new Event("input");
 				search.dispatchEvent(event);
 			}
+
+			// restore category open state and left scroll
+			if (restoredUI.openCats) {
+				document
+					.querySelectorAll("#panel-colors details.category")
+					.forEach((d) => {
+						const det = d as HTMLDetailsElement;
+						const title =
+							det.querySelector("summary")?.textContent?.trim() || "";
+						if (title && restoredUI!.openCats![title] !== undefined)
+							det.open = !!restoredUI!.openCats![title];
+					});
+			}
+			if (typeof restoredUI.leftScroll === "number") {
+				const panel = document.getElementById("panel-colors");
+				if (panel) (panel as HTMLElement).scrollTop = restoredUI.leftScroll;
+			}
 		}
 	}
 	if (type === "LOAD_CURRENT") {
@@ -234,13 +257,13 @@ function renderColors() {
 	root.innerHTML = categories
 		.map(
 			(c) => `
-    <section>
-      <h4>${c.name}</h4>
-      ${c.items
-				.map((it) => inputRow(it.key, it.key, it.description || ""))
-				.join("")}
-    </section>
-  `
+		<details class="category" open>
+			<summary>${c.name}</summary>
+			<div class="cat-list">
+				${c.items.map((it) => inputRow(it.key, it.key, it.description || "")).join("")}
+			</div>
+		</details>
+	`
 		)
 		.join("");
 	root
@@ -557,6 +580,7 @@ function semRow(sel: string, s: any, i: number) {
 function renderPreviewDemos() {
 	const root = document.getElementById("preview")!;
 	root.innerHTML = getDemosHtml();
+	applyTokenStyles();
 	// clicking preview tabs
 	document.querySelectorAll(".ptab").forEach((b) =>
 		b.addEventListener("click", () => {
@@ -584,8 +608,31 @@ function pushPreview() {
 			try {
 				vscode.setState && vscode.setState({ model, ui: collectUI() });
 			} catch {}
+			// also update token styles in preview
+			applyTokenStyles();
 		}
 	}, PREVIEW_DEBOUNCE_MS);
+}
+
+// Inject simple token color styles for the editor demo
+function applyTokenStyles() {
+	const styleId = "token-style";
+	let style = document.getElementById(styleId) as HTMLStyleElement | null;
+	if (!style) {
+		style = document.createElement("style");
+		style.id = styleId;
+		document.head.appendChild(style);
+	}
+	const rules = model.tokenColors
+		.filter((r) => r.settings && r.settings.foreground)
+		.map((r, i) => {
+			const color = r.settings.foreground!;
+			const cls = `#code-sample .tok-${i}`;
+			return `${cls}{color:${color};}`;
+		})
+		.join("\n");
+	style.textContent = rules;
+	// sample HTML is static in getDemosHtml(); nothing to rewrite here
 }
 
 function collectUI() {
@@ -595,7 +642,15 @@ function collectUI() {
 	const previewTab = ptab?.dataset.demo || "editor";
 	const search =
 		(document.getElementById("search") as HTMLInputElement)?.value || "";
-	return { leftTab: left, previewTab, search };
+	const openCats: Record<string, boolean> = {};
+	document.querySelectorAll("#panel-colors details.category").forEach((d) => {
+		const det = d as HTMLDetailsElement;
+		const title = det.querySelector("summary")?.textContent?.trim() || "";
+		if (title) openCats[title] = det.open;
+	});
+	const leftScroll =
+		(document.getElementById("panel-colors") as HTMLElement)?.scrollTop || 0;
+	return { leftTab: left, previewTab, search, openCats, leftScroll };
 }
 
 function saveState() {
@@ -619,18 +674,51 @@ function demoIdForKey(key: string): string {
 // Minimal demos
 function getDemosHtml() {
 	return `
-  <section class="demo" id="demo-editor" style="display:block">
-    <div id="editor" contenteditable="true" style="min-height:220px;padding:8px;border:1px solid var(--vscode-editorWidget-border)">
-      // active line, selections, cursor, hover, indent guides, etc.
-      function demo() { console.log('Hello theme'); }
-    </div>
-  </section>
-  <section class="demo" id="demo-panels" style="display:none"><div>Panels</div></section>
-  <section class="demo" id="demo-problems" style="display:none"><div>Problems list</div></section>
-  <section class="demo" id="demo-terminal" style="display:none"><div>Terminal</div></section>
-  <section class="demo" id="demo-notifications" style="display:none"><div>Notifications</div></section>
-  <section class="demo" id="demo-statusbar" style="display:none"><div>Status Bar</div></section>
-  <section class="demo" id="demo-lists" style="display:none"><div>Lists/Tabs</div></section>`;
+	<section class="demo" id="demo-editor" style="display:block">
+		<div id="editor" style="border:1px solid var(--vscode-editorWidget-border);display:grid;grid-template-columns:46px 1fr;min-height:220px">
+			<div class="gutter" style="background:var(--vscode-editorGutter-background);border-right:1px solid var(--vscode-editorWidget-border);padding:8px 6px;color:var(--vscode-editorLineNumber-foreground)">1\n2\n3\n4\n5</div>
+			<div class="code" style="position:relative;padding:8px;">
+				<div class="active-line" style="position:absolute;left:0;right:0;top:8px;height:1.4em;background:var(--vscode-editor-lineHighlightBackground)"></div>
+				<div class="selection" style="position:absolute;left:60px;top:8px;width:220px;height:1.4em;background:var(--vscode-editor-selectionBackground)"></div>
+				<div class="cursor" style="position:absolute;left:100px;top:8px;width:1px;height:1.4em;background:var(--vscode-editorCursor-foreground)"></div>
+				<pre id="code-sample" style="margin:0;white-space:pre;tab-size:2;color:var(--vscode-editor-foreground)"><code>
+<span class="tok-0">function</span> <span class="tok-1">demo</span>() { <span class="tok-2">console</span>.<span class="tok-3">log</span>(<span class="tok-4">'Hello theme'</span>); }
+				</code></pre>
+			</div>
+		</div>
+	</section>
+	<section class="demo" id="demo-panels" style="display:none">
+		<div class="panel-surface">
+			<div style="font-weight:600;margin-bottom:6px">Panel Title</div>
+			<div>Some content inside a VS Code panel area.</div>
+		</div>
+	</section>
+	<section class="demo" id="demo-problems" style="display:none">
+		<div class="problems-list">
+			<div style="padding:6px;border-bottom:1px solid var(--vscode-editorWidget-border)">src/app.ts:12:5 Missing semicolon</div>
+			<div style="padding:6px;border-bottom:1px solid var(--vscode-editorWidget-border)">src/utils.ts:3:10 Unused variable</div>
+			<div style="padding:6px">src/index.ts:1:1 Unexpected any</div>
+		</div>
+	</section>
+	<section class="demo" id="demo-terminal" style="display:none">
+		<div class="terminal">PS E:\> npm run build\nwebpack 5 compiling... done</div>
+	</section>
+	<section class="demo" id="demo-notifications" style="display:none">
+		<div class="notification">Build completed successfully.</div>
+	</section>
+	<section class="demo" id="demo-statusbar" style="display:none">
+		<div class="statusbar"><span>Ln 12, Col 8</span><span>UTF-8</span><span>LF</span><span>TypeScript</span></div>
+	</section>
+	<section class="demo" id="demo-lists" style="display:none">
+			<div class="list">
+				<div style="display:flex;border-bottom:1px solid var(--vscode-editorGroupHeader-tabsBorder)">
+					<div style="padding:6px 10px;background:var(--vscode-tab-activeBackground);color:var(--vscode-tab-activeForeground);border-right:1px solid var(--vscode-editorGroupHeader-tabsBorder)">app.ts</div>
+					<div style="padding:6px 10px;background:var(--vscode-tab-inactiveBackground);color:var(--vscode-tab-inactiveForeground);border-right:1px solid var(--vscode-editorGroupHeader-tabsBorder)">utils.ts</div>
+					<div style="padding:6px 10px;background:var(--vscode-tab-inactiveBackground);color:var(--vscode-tab-inactiveForeground)">index.ts</div>
+				</div>
+				<div style="padding:8px">Content area under tabs</div>
+			</div>
+	</section>`;
 }
 
 // Merge helpers: base retains precedence; add contributes missing keys/rules
@@ -707,19 +795,42 @@ document.addEventListener("DOMContentLoaded", () => {
 			saveState();
 		})
 	);
+	// track category open/close
+	document.addEventListener(
+		"toggle",
+		(e) => {
+			const target = e.target as HTMLElement;
+			if (target && target.matches && target.matches("details.category")) {
+				saveState();
+			}
+		},
+		true
+	);
+	// track left scroll
+	const leftPanel = document.getElementById("panel-colors");
+	if (leftPanel) {
+		leftPanel.addEventListener("scroll", () => {
+			// throttle via microtask to avoid excessive setState
+			window.requestAnimationFrame(() => saveState());
+		});
+	}
 	const search = document.getElementById("search") as HTMLInputElement;
 	search.addEventListener("input", () => {
 		const q = search.value.toLowerCase();
-		document.querySelectorAll("#panel-colors section").forEach((section) => {
-			let any = false;
-			section.querySelectorAll(".row").forEach((row) => {
-				const txt = row.textContent?.toLowerCase() || "";
-				const show = txt.includes(q);
-				(row as HTMLElement).style.display = show ? "" : "none";
-				if (show) any = true;
+		document
+			.querySelectorAll("#panel-colors details.category")
+			.forEach((detailsEl) => {
+				let any = false;
+				detailsEl.querySelectorAll(".row").forEach((row) => {
+					const txt = row.textContent?.toLowerCase() || "";
+					const show = txt.includes(q);
+					(row as HTMLElement).style.display = show ? "" : "none";
+					if (show) any = true;
+				});
+				(detailsEl as HTMLDetailsElement).style.display =
+					any || q === "" ? "" : "none";
+				if (q) (detailsEl as HTMLDetailsElement).open = any;
 			});
-			(section as HTMLElement).style.display = any ? "" : "none";
-		});
 		// tokens filter
 		document.querySelectorAll("#panel-tokens .row").forEach((row) => {
 			const txt = row.textContent?.toLowerCase() || "";
@@ -732,6 +843,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 		saveState();
 	});
+	const clearBtn = document.getElementById(
+		"clear-search"
+	) as HTMLButtonElement | null;
+	if (clearBtn) {
+		clearBtn.addEventListener("click", () => {
+			search.value = "";
+			const event = new Event("input");
+			search.dispatchEvent(event);
+			saveState();
+		});
+	}
 
 	// Keyboard shortcuts: Undo/Redo
 	window.addEventListener("keydown", (e) => {
