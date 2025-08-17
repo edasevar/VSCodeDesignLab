@@ -94,3 +94,9 @@ body {
 	font-size: 0.8em;
 	color: var(--vscode-descriptionForeground);
 }
+
+/* Input validation cue */
+input.invalid {
+	outline: 1px solid var(--vscode-inputValidation-errorBorder);
+	background: color-mix(in srgb, var(--vscode-input-background), red 6%);
+}

@@ -73,21 +73,24 @@ function getHtml(panel: vscode.WebviewPanel, ctx: vscode.ExtensionContext) {
   <body>
     <div id="app" class="lab">
       <aside class="left">
-        <div class="toolbar">
-          <button id="btn-use" title="Use Current Settings">Use Current</button>
+				<div class="toolbar">
+		  <button id="btn-use" title="Use Current Settings" aria-label="Use current settings">Use Current</button>
           <button id="btn-blank" title="Start Blank">Blank</button>
+		  <button id="btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo">Undo</button>
+		  <button id="btn-redo" title="Redo (Ctrl+Y)" aria-label="Redo">Redo</button>
           <button id="btn-import" title="Import Theme">Import</button>
           <div style="flex:1"></div>
-          <button id="btn-export-json" title="Export JSON">JSON</button>
-          <button id="btn-export-css" title="Export CSS Vars">CSS</button>
-          <button id="btn-export-vsix" title="Export VSIX">VSIX</button>
+					<span id="status" aria-live="polite" title="Edit status"></span>
+		  <button id="btn-export-json" title="Export JSON" aria-label="Export JSON">JSON</button>
+		  <button id="btn-export-css" title="Export CSS Vars" aria-label="Export CSS variables">CSS</button>
+		  <button id="btn-export-vsix" title="Export VSIX" aria-label="Export VSIX">VSIX</button>
         </div>
         <div class="tabs">
           <button data-tab="colors" class="tab active">Colors</button>
           <button data-tab="tokens" class="tab">Tokens</button>
           <button data-tab="semantic" class="tab">Semantic</button>
         </div>
-        <input id="search" placeholder="Search colors/tokens…" />
+	<input id="search" placeholder="Search colors/tokens…" aria-label="Search colors, tokens, and semantic rules" />
         <div id="panel-colors" class="panel active"></div>
         <div id="panel-tokens" class="panel"></div>
         <div id="panel-semantic" class="panel"></div>

@@ -1,6 +1,21 @@
 // Purpose: render left controls (Colors/Tokens/Semantic), wire inputs to extension via APPLY_PREVIEW, implement locate pulse, and build right demos.
 declare const acquireVsCodeApi: any;
+// restored state placeholder
+let restoredModel: any | undefined;
+let restoredUI:
+	| { leftTab?: string; previewTab?: string; search?: string }
+	| undefined;
 const vscode = acquireVsCodeApi();
+// try restore
+try {
+	const saved = vscode.getState && vscode.getState();
+	if (saved && saved.model) {
+		restoredModel = saved.model;
+	}
+	if (saved && saved.ui) {
+		restoredUI = saved.ui;
+	}
+} catch {}
 
 type Rule = {
 	scope: string | string[];
@@ -13,6 +28,77 @@ let model = {
 	tokenColors: [] as Rule[],
 	semanticTokens: {} as Semantic,
 };
+// Debounce state for preview updates
+let previewTimer: number | undefined;
+const PREVIEW_DEBOUNCE_MS = 120;
+let lastPreviewSnapshot: string | undefined;
+
+// Simple history for undo/redo
+type Model = typeof model;
+const historyStack: Model[] = [];
+const redoStack: Model[] = [];
+let lastHistoryTs = 0;
+const HISTORY_MIN_INTERVAL_MS = 500;
+let baselineSnapshot: string | undefined;
+
+const deepClone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
+const recordHistory = () => {
+	const now = Date.now();
+	if (now - lastHistoryTs < HISTORY_MIN_INTERVAL_MS) return;
+	historyStack.push(deepClone(model));
+	// cap history to 50 entries
+	if (historyStack.length > 50) historyStack.shift();
+	// new edits invalidate redo
+	redoStack.length = 0;
+	lastHistoryTs = now;
+	updateUndoRedoButtons();
+};
+
+const undo = () => {
+	if (!historyStack.length) return;
+	redoStack.push(deepClone(model));
+	const prev = historyStack.pop()!;
+	model = deepClone(prev);
+	renderAll();
+	pushPreview();
+	updateUndoRedoButtons();
+};
+
+const redo = () => {
+	if (!redoStack.length) return;
+	historyStack.push(deepClone(model));
+	const next = redoStack.pop()!;
+	model = deepClone(next);
+	renderAll();
+	pushPreview();
+	updateUndoRedoButtons();
+};
+
+function updateUndoRedoButtons() {
+	const undoBtn = document.getElementById(
+		"btn-undo"
+	) as HTMLButtonElement | null;
+	const redoBtn = document.getElementById(
+		"btn-redo"
+	) as HTMLButtonElement | null;
+	if (undoBtn) undoBtn.disabled = historyStack.length === 0;
+	if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+	const status = document.getElementById("status");
+	if (status) {
+		const dirty = JSON.stringify(model) !== (baselineSnapshot || "");
+		(status as HTMLElement).textContent = `${dirty ? "● " : ""}Undo:${
+			historyStack.length
+		} Redo:${redoStack.length}`;
+	}
+}
+
+function resetHistory() {
+	historyStack.length = 0;
+	redoStack.length = 0;
+	lastHistoryTs = 0;
+	baselineSnapshot = JSON.stringify(model);
+	updateUndoRedoButtons();
+}
 let categories: {
 	name: string;
 	items: { key: string; description: string }[];
@@ -24,10 +110,44 @@ window.addEventListener("message", (e) => {
 		categories = payload.categories || [];
 		const current = payload.settings || {};
 		// If user wants to start from current
-		model.colors = current.colors || {};
-		model.tokenColors = current.tokenColors?.textMateRules || [];
-		model.semanticTokens = current.semanticTokens?.rules || {};
+		if (restoredModel) {
+			model = deepClone(restoredModel);
+		} else {
+			model.colors = current.colors || {};
+			model.tokenColors = current.tokenColors?.textMateRules || [];
+			model.semanticTokens = current.semanticTokens?.rules || {};
+		}
 		renderAll();
+		resetHistory();
+		// restore UI state
+		if (restoredUI) {
+			const left = restoredUI.leftTab || "colors";
+			document
+				.querySelectorAll(".tab")
+				.forEach((t) => t.classList.remove("active"));
+			document.querySelector(`[data-tab="${left}"]`)?.classList.add("active");
+			document
+				.querySelectorAll(".panel")
+				.forEach((x) => x.classList.remove("active"));
+			document.getElementById("panel-" + left)?.classList.add("active");
+
+			const p = restoredUI.previewTab || "editor";
+			document
+				.querySelectorAll(".ptab")
+				.forEach((t) => t.classList.remove("active"));
+			document.querySelector(`[data-demo="${p}"]`)?.classList.add("active");
+			document
+				.querySelectorAll(".demo")
+				.forEach((x) => ((x as HTMLElement).style.display = "none"));
+			document.getElementById("demo-" + p)!.style.display = "block";
+
+			if (typeof restoredUI.search === "string") {
+				const search = document.getElementById("search") as HTMLInputElement;
+				search.value = restoredUI.search;
+				const event = new Event("input");
+				search.dispatchEvent(event);
+			}
+		}
 	}
 	if (type === "LOAD_CURRENT") {
 		model.colors = mergeColors(model.colors, payload.colors || {});
@@ -40,6 +160,7 @@ window.addEventListener("message", (e) => {
 			payload.semanticTokens || {}
 		);
 		renderAll();
+		resetHistory();
 		pushPreview();
 	}
 	if (type === "LOAD_IMPORTED") {
@@ -47,9 +168,12 @@ window.addEventListener("message", (e) => {
 		model.tokenColors = payload.tokenColors || [];
 		model.semanticTokens = payload.semanticTokens || {};
 		renderAll();
+		resetHistory();
 		pushPreview();
 	}
 	if (type === "LOCATE") pulse(payload?.elementId);
+	if (type === "UI_UNDO") undo();
+	if (type === "UI_REDO") redo();
 });
 
 function pulse(id?: string) {
@@ -75,12 +199,14 @@ function inputRow(label: string, key: string, description: string) {
     <div class="row">
       <div class="row-head">
         <strong>${label}</strong>
-        <button data-locate="${key}" title="Locate in Preview">Locate</button>
+        <button data-locate="${key}" title="Locate in Preview" aria-label="Locate ${key} in preview">Locate</button>
       </div>
       <div class="row-body">
-        <input type="color" data-key="${key}" value="${coerceHex(v)}" />
-		<input type="text" data-key="${key}" value="${v}" placeholder="#RRGGBB or #RRGGBBAA"/>
-		<input type="range" min="0" max="100" step="1" data-alpha-key="${key}" value="${alpha}" title="Alpha ${alpha}%"/>
+        <input type="color" data-key="${key}" value="${coerceHex(
+		v
+	)}" aria-label="Color value for ${key}" />
+		<input type="text" data-key="${key}" value="${v}" placeholder="#RRGGBB or #RRGGBBAA" aria-label="Hex color for ${key}" />
+		<input type="range" min="0" max="100" step="1" data-alpha-key="${key}" value="${alpha}" title="Alpha ${alpha}%" aria-label="Alpha for ${key}" />
         <span class="desc">${description || ""}</span>
       </div>
     </div>`;
@@ -90,6 +216,17 @@ function coerceHex(s: string) {
 	return /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(s)
 		? `#${s.replace("#", "").slice(0, 6)}`
 		: "#000000";
+}
+
+function isValidHex(s: string) {
+	return /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s.trim());
+}
+
+function normalizeHex(s: string) {
+	// Uppercase and ensure leading '#'
+	let v = s.trim();
+	if (!v.startsWith("#")) v = "#" + v;
+	return v.toUpperCase();
 }
 
 function renderColors() {
@@ -139,7 +276,6 @@ function handleColorInput(ev: Event) {
 	const alphaInput = parent.querySelector(
 		'input[type="range"][data-alpha-key="' + key + '"]'
 	) as HTMLInputElement;
-
 	if (t.type === "color") {
 		// preserve existing alpha from text input if present
 		const base6 = val; // #RRGGBB
@@ -150,12 +286,23 @@ function handleColorInput(ev: Event) {
 		val = merged;
 	} else if (t.type === "text") {
 		// sync color and alpha controls from text
-		if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(val)) {
+		if (isValidHex(val)) {
 			colorInput.value = coerceHex(val);
 			alphaInput.value = String(alphaFromHex(val));
+			textInput.classList.remove("invalid");
+			textInput.setAttribute("aria-invalid", "false");
 		}
 	}
-	model.colors[key] = val;
+	// Guard against invalid hex; do not apply until valid
+	if (!isValidHex(val)) {
+		textInput.classList.add("invalid");
+		textInput.setAttribute("aria-invalid", "true");
+		return;
+	}
+	textInput.classList.remove("invalid");
+	textInput.setAttribute("aria-invalid", "false");
+	recordHistory();
+	model.colors[key] = normalizeHex(val);
 	pushPreview();
 	// auto-locate in preview when editing a color
 	vscode.postMessage({
@@ -177,6 +324,7 @@ function handleAlphaInput(ev: Event) {
 	const aPct = clampPct(parseInt(t.value, 10));
 	const merged = mergeHexWithAlpha(colorInput.value, aPct);
 	textInput.value = merged;
+	recordHistory();
 	model.colors[key] = merged;
 	pushPreview();
 	// auto-locate in preview when changing alpha
@@ -210,9 +358,10 @@ function renderTokens() {
 	const root = document.getElementById("panel-tokens")!;
 	const rows = model.tokenColors.map((r, idx) => tokenRow(r, idx)).join("");
 	root.innerHTML = `
-		<button id="add-token">Add Rule</button>
+		<button id="add-token" aria-label="Add token rule">Add Rule</button>
     <div>${rows}</div>`;
 	document.getElementById("add-token")!.addEventListener("click", () => {
+		recordHistory();
 		model.tokenColors.push({ scope: "", settings: {} });
 		renderTokens();
 		pushPreview();
@@ -222,8 +371,19 @@ function renderTokens() {
 			const t = e.target as HTMLInputElement;
 			const idx = Number(t.dataset.index);
 			const field = t.dataset.field!;
+			recordHistory();
 			if (field === "scope") model.tokenColors[idx].scope = t.value;
-			if (field === "fg") model.tokenColors[idx].settings.foreground = t.value;
+			if (field === "fg") {
+				const v = t.value.trim();
+				if (!isValidHex(v)) {
+					t.classList.add("invalid");
+					t.setAttribute("aria-invalid", "true");
+					return;
+				}
+				t.classList.remove("invalid");
+				t.setAttribute("aria-invalid", "false");
+				model.tokenColors[idx].settings.foreground = normalizeHex(v);
+			}
 			if (field === "fs") model.tokenColors[idx].settings.fontStyle = t.value;
 			pushPreview();
 			vscode.postMessage({
@@ -235,6 +395,7 @@ function renderTokens() {
 	root.querySelectorAll("[data-token-remove]").forEach((btn) =>
 		btn.addEventListener("click", (e) => {
 			const i = Number((e.currentTarget as HTMLElement).dataset.index);
+			recordHistory();
 			model.tokenColors.splice(i, 1);
 			renderTokens();
 			pushPreview();
@@ -253,6 +414,7 @@ function renderTokens() {
 				.split(/\s+/)
 				.filter(Boolean);
 			const set = new Set(cur);
+			recordHistory();
 			if (t.checked) set.add(val);
 			else set.delete(val);
 			model.tokenColors[i].settings.fontStyle =
@@ -270,10 +432,10 @@ function tokenRow(r: Rule, idx: number) {
 	const fs = (r.settings.fontStyle || "").split(/\s+/).filter(Boolean);
 	const has = (k: string) => fs.includes(k);
 	return `<div class="row">
-		<label>scope</label><input data-token-edit data-index="${idx}" data-field="scope" value="${
+		<label>scope</label><input data-token-edit aria-label="Token scope" data-index="${idx}" data-field="scope" value="${
 		Array.isArray(r.scope) ? r.scope.join(", ") : r.scope || ""
 	}" />
-    <label>foreground</label><input data-token-edit data-index="${idx}" data-field="fg" value="${
+    <label>foreground</label><input data-token-edit aria-label="Token foreground color" data-index="${idx}" data-field="fg" value="${
 		r.settings.foreground || ""
 	}" />
 		<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
@@ -290,7 +452,9 @@ function tokenRow(r: Rule, idx: number) {
 		has("strikethrough") ? "checked" : ""
 	}/> strikethrough</label>
 		</fieldset>
-		<button data-token-remove data-index="${idx}">Remove</button>
+		<button data-token-remove data-index="${idx}" aria-label="Remove token rule ${
+		idx + 1
+	}">Remove</button>
   </div>`;
 }
 
@@ -298,9 +462,10 @@ function renderSemantic() {
 	const root = document.getElementById("panel-semantic")!;
 	const entries = Object.entries(model.semanticTokens);
 	root.innerHTML = `
-    <button id="add-sem">Add Semantic</button>
+		<button id="add-sem" aria-label="Add semantic rule">Add Semantic</button>
     <div>${entries.map(([sel, s], i) => semRow(sel, s, i)).join("")}</div>`;
 	document.getElementById("add-sem")!.addEventListener("click", () => {
+		recordHistory();
 		model.semanticTokens["entity.name.new"] = {};
 		renderSemantic();
 		pushPreview();
@@ -311,13 +476,22 @@ function renderSemantic() {
 			const i = Number(t.dataset.index);
 			const entries = Object.keys(model.semanticTokens);
 			const sel = entries[i];
+			recordHistory();
 			if (t.dataset.field === "selector") {
 				const val = t.value;
 				const cur = model.semanticTokens[sel];
 				delete model.semanticTokens[sel];
 				model.semanticTokens[val] = cur;
 			} else if (t.dataset.field === "fg") {
-				model.semanticTokens[sel].foreground = t.value;
+				const v = t.value.trim();
+				if (!isValidHex(v)) {
+					t.classList.add("invalid");
+					t.setAttribute("aria-invalid", "true");
+					return;
+				}
+				t.classList.remove("invalid");
+				t.setAttribute("aria-invalid", "false");
+				model.semanticTokens[sel].foreground = normalizeHex(v);
 			} else if (t.dataset.field === "fs") {
 				model.semanticTokens[sel].fontStyle = t.value;
 			}
@@ -329,6 +503,7 @@ function renderSemantic() {
 			const i = Number((e.currentTarget as HTMLElement).dataset.index);
 			const entries = Object.keys(model.semanticTokens);
 			const sel = entries[i];
+			recordHistory();
 			delete model.semanticTokens[sel];
 			renderSemantic();
 			pushPreview();
@@ -344,6 +519,7 @@ function renderSemantic() {
 				.split(/\s+/)
 				.filter(Boolean);
 			const set = new Set(cur);
+			recordHistory();
 			if (t.checked) set.add(t.value);
 			else set.delete(t.value);
 			model.semanticTokens[sel].fontStyle =
@@ -357,8 +533,8 @@ function semRow(sel: string, s: any, i: number) {
 	const fs = (s.fontStyle || "").split(/\s+/).filter(Boolean);
 	const has = (k: string) => fs.includes(k);
 	return `<div class="row">
-    <label>selector</label><input data-sem data-index="${i}" data-field="selector" value="${sel}"/>
-    <label>foreground</label><input data-sem data-index="${i}" data-field="fg" value="${
+	<label>selector</label><input data-sem aria-label="Semantic selector" data-index="${i}" data-field="selector" value="${sel}"/>
+	<label>foreground</label><input data-sem aria-label="Semantic foreground color" data-index="${i}" data-field="fg" value="${
 		s.foreground || ""
 	}"/>
 		<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
@@ -372,7 +548,9 @@ function semRow(sel: string, s: any, i: number) {
 		has("underline") ? "checked" : ""
 	}/> underline</label>
 		</fieldset>
-		<button data-sem-remove data-index="${i}">Remove</button>
+		<button data-sem-remove data-index="${i}" aria-label="Remove semantic rule ${
+		i + 1
+	}">Remove</button>
   </div>`;
 }
 
@@ -391,12 +569,39 @@ function renderPreviewDemos() {
 				.querySelectorAll(".demo")
 				.forEach((x) => ((x as HTMLElement).style.display = "none"));
 			document.getElementById("demo-" + id)!.style.display = "block";
+			saveState();
 		})
 	);
 }
 
 function pushPreview() {
-	vscode.postMessage({ type: "APPLY_PREVIEW", payload: model });
+	if (previewTimer) (window as any).clearTimeout(previewTimer);
+	previewTimer = (window as any).setTimeout(() => {
+		const snap = JSON.stringify(model);
+		if (snap !== lastPreviewSnapshot) {
+			lastPreviewSnapshot = snap;
+			vscode.postMessage({ type: "APPLY_PREVIEW", payload: model });
+			try {
+				vscode.setState && vscode.setState({ model, ui: collectUI() });
+			} catch {}
+		}
+	}, PREVIEW_DEBOUNCE_MS);
+}
+
+function collectUI() {
+	const leftBtn = document.querySelector(".tab.active") as HTMLElement | null;
+	const left = leftBtn?.dataset.tab || "colors";
+	const ptab = document.querySelector(".ptab.active") as HTMLElement | null;
+	const previewTab = ptab?.dataset.demo || "editor";
+	const search =
+		(document.getElementById("search") as HTMLInputElement)?.value || "";
+	return { leftTab: left, previewTab, search };
+}
+
+function saveState() {
+	try {
+		vscode.setState && vscode.setState({ model, ui: collectUI() });
+	} catch {}
 }
 
 // Map color key to demo element id
@@ -473,6 +678,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	byId("btn-blank")?.addEventListener("click", () =>
 		vscode.postMessage({ type: "REQUEST_START_BLANK" })
 	);
+	byId("btn-undo")?.addEventListener("click", () => {
+		undo();
+	});
+	byId("btn-redo")?.addEventListener("click", () => {
+		redo();
+	});
 	byId("btn-export-json")?.addEventListener("click", () =>
 		vscode.postMessage({ type: "REQUEST_EXPORT_JSON" })
 	);
@@ -493,6 +704,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				.querySelectorAll(".panel")
 				.forEach((x) => x.classList.remove("active"));
 			document.getElementById("panel-" + id)!.classList.add("active");
+			saveState();
 		})
 	);
 	const search = document.getElementById("search") as HTMLInputElement;
@@ -518,6 +730,23 @@ document.addEventListener("DOMContentLoaded", () => {
 			const txt = row.textContent?.toLowerCase() || "";
 			(row as HTMLElement).style.display = txt.includes(q) ? "" : "none";
 		});
+		saveState();
 	});
+
+	// Keyboard shortcuts: Undo/Redo
+	window.addEventListener("keydown", (e) => {
+		const ctrlOrMeta = e.ctrlKey || e.metaKey;
+		if (!ctrlOrMeta) return;
+		const key = e.key.toLowerCase();
+		if (key === "z") {
+			e.preventDefault();
+			if (e.shiftKey) redo();
+			else undo();
+		} else if (key === "y") {
+			e.preventDefault();
+			redo();
+		}
+	});
+	updateUndoRedoButtons();
 	vscode.postMessage({ type: "REQUEST_BOOT" });
 });
