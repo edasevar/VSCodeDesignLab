@@ -1,0 +1,38 @@
+<!-- Purpose: Main HTML for VS Code Design Lab webview. Two-panel layout, tabs, search, and preview. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VS Code Design Lab</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="lab">
+    <div class="left">
+      <div class="tabs">
+        <button class="tab active" data-tab="colors">Colors</button>
+        <button class="tab" data-tab="tokens">Tokens</button>
+        <button class="tab" data-tab="semantic">Semantic</button>
+      </div>
+      <input id="search" type="text" placeholder="Search colors/tokens/semantic..." />
+      <div class="panel active" id="panel-colors"></div>
+      <div class="panel" id="panel-tokens"></div>
+      <div class="panel" id="panel-semantic"></div>
+    </div>
+    <div class="right">
+      <div class="preview-tabs">
+        <button class="ptab active" data-demo="editor">Editor</button>
+        <button class="ptab" data-demo="panels">Panels</button>
+        <button class="ptab" data-demo="problems">Problems</button>
+        <button class="ptab" data-demo="terminal">Terminal</button>
+        <button class="ptab" data-demo="notifications">Notifications</button>
+        <button class="ptab" data-demo="statusbar">Status Bar</button>
+        <button class="ptab" data-demo="lists">Lists/Tabs</button>
+      </div>
+      <div id="preview"></div>
+    </div>
+  </div>
+  <script src="webview.js"></script>
+</body>
+</html>

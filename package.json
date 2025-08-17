@@ -1,0 +1,77 @@
+{
+	"name": "vsc-design-lab",
+	"displayName": "VS Code Design Lab",
+	"description": "Two-panel theme editor with live preview, import/export (JSON/JSONC/VSIX), and element locator.",
+	"publisher": "edasevar",
+	"version": "1.2.0",
+	"engines": {
+		"vscode": "^1.88.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [],
+	"contributes": {
+		"commands": [
+			{
+				"command": "designLab.open",
+				"title": "Design Lab: Open"
+			},
+			{
+				"command": "designLab.startBlank",
+				"title": "Design Lab: Start Blank"
+			},
+			{
+				"command": "designLab.importTheme",
+				"title": "Design Lab: Import Theme (JSON / JSONC / VSIX)"
+			},
+			{
+				"command": "designLab.useCurrent",
+				"title": "Design Lab: Use Current Settings"
+			},
+			{
+				"command": "designLab.export.json",
+				"title": "Design Lab: Export JSON"
+			},
+			{
+				"command": "designLab.export.css",
+				"title": "Design Lab: Export CSS Variables"
+			},
+			{
+				"command": "designLab.export.vsix",
+				"title": "Design Lab: Export VSIX"
+			}
+		],
+		"configuration": {
+			"title": "Design Lab",
+			"properties": {
+				"designLab.preview.applyToWorkspace": {
+					"type": "boolean",
+					"default": true,
+					"description": "Apply live preview to the current workspace (true) or user settings (false)."
+				}
+			}
+		}
+	},
+	"main": "./out/src/extension.js",
+	"browser": "./out/media/webview.js",
+	"scripts": {
+		"build": "webpack --mode=production",
+		"watch": "webpack --watch",
+		"package": "vsce package",
+		"compile": "npm run build",
+		"dev": "webpack --mode=development --watch"
+	},
+	"devDependencies": {
+		"@types/vscode": "^1.103.0",
+		"copy-webpack-plugin": "^12.0.2",
+		"ts-loader": "^9.5.2",
+		"typescript": "^5.9.2",
+		"webpack": "^5.101.2",
+		"webpack-cli": "^6.0.1"
+	},
+	"dependencies": {
+		"jsonc-parser": "^3.3.1",
+		"jszip": "^3.10.1"
+	}
+}

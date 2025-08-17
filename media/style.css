@@ -1,0 +1,96 @@
+.lab {
+	display: flex;
+	height: 100vh;
+}
+
+.left {
+	width: 360px;
+	border-right: 1px solid var(--vscode-editorGroup-border);
+	padding: 8px;
+	overflow: auto;
+}
+
+.toolbar {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	margin-bottom: 8px;
+}
+
+.right {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+}
+
+.tabs,
+.preview-tabs {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 8px;
+	flex-wrap: wrap;
+}
+
+.tab,
+.ptab {
+	border: 1px solid var(--vscode-editorWidget-border);
+	padding: 4px 8px;
+	cursor: pointer;
+}
+
+.panel {
+	display: none;
+}
+
+.panel.active {
+	display: block;
+}
+
+#search {
+	width: 100%;
+	margin: 6px 0 10px;
+}
+
+.locate-pulse {
+	outline: 2px solid var(--vscode-focusBorder);
+	animation: pulse .9s ease-out 2;
+}
+
+@keyframes pulse {
+	from {
+		outline-offset: 0;
+	}
+
+	to {
+		outline-offset: 6px;
+		opacity: .4;
+	}
+}
+
+html,
+body {
+	background: var(--vscode-editor-background);
+	color: var(--vscode-editor-foreground);
+	font-family: var(--vscode-editor-font-family, sans-serif);
+	font-size: var(--vscode-font-size, 13px);
+}
+
+.row {
+	margin-bottom: 6px;
+}
+
+.row-head {
+	display: flex;
+	justify-content: space-between;
+}
+
+.row-body {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.desc {
+	font-size: 0.8em;
+	color: var(--vscode-descriptionForeground);
+}
