@@ -34,10 +34,10 @@ Date: 2025-08-16
 - Tests and improved docs.
 
 ## Versioning
-- package.json version: 1.2.0
-- CHANGELOG updated for 1.2.0
+- package.json version: 1.2.1
+- CHANGELOG updated for 1.2.1
 
 ## Next Steps
-1. End-to-end test imports/exports and toolbar actions.
+1. End-to-end test imports/exports and toolbar actions (see README checklist).
 2. Virtualize/optimize color list rendering if performance issues appear.
 3. Add validation and better UX affordances.

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.2.1 - 2025-08-16
+### Docs
+- Added E2E validation checklist and clarified development steps in README.
+- Recorded build verification status and artifact list.
+
 ## 1.2.0 - 2025-08-16
 ### Added
 - In-webview toolbar: Use Current, Blank, Import, Export (JSON/CSS/VSIX).

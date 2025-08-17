@@ -3,10 +3,9 @@ export function importFromJSON(theme: any) {
 	return {
 		colors: theme.colors || {},
 		tokenColors: normalizeTextMate(theme.tokenColors),
-		semanticTokens:
-			theme.semanticTokenColors || theme.semanticHighlighting
-				? theme.semanticTokenColors || {}
-				: {},
+		// If semanticTokenColors is provided, use it; otherwise empty map.
+		// semanticHighlighting is a boolean flag in some themes, not the rules map.
+		semanticTokens: theme.semanticTokenColors || {},
 	};
 }
 export function importFromJSONC(obj: any) {

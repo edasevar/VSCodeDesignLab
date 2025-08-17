@@ -14,7 +14,15 @@ export async function importFromVSIX(buf: Uint8Array) {
 	const theme = JSON.parse(themeStr);
 	return {
 		colors: theme.colors || {},
-		tokenColors: Array.isArray(theme.tokenColors) ? theme.tokenColors : [],
+		tokenColors: Array.isArray(theme.tokenColors)
+			? theme.tokenColors.map((r: any) => ({
+					scope: r.scope,
+					settings: {
+						foreground: r.settings?.foreground,
+						fontStyle: r.settings?.fontStyle,
+					},
+			  }))
+			: [],
 		semanticTokens: theme.semanticTokenColors || {},
 	};
 }

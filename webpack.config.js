@@ -17,7 +17,10 @@ module.exports = [
 		plugins: [
 			new CopyWebpackPlugin({
 				patterns: [
-					{ from: "assets/colors-template.json", to: path.resolve(__dirname, "out/assets/colors-template.json") },
+					{
+						from: "assets/colors-template.json",
+						to: path.resolve(__dirname, "out/assets/colors-template.json"),
+					},
 				],
 			}),
 		],

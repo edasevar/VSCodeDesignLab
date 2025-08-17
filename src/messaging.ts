@@ -21,24 +21,24 @@ export const createPanel = (
 					},
 				});
 				break;
-      case "REQUEST_IMPORT":
-        await vscode.commands.executeCommand("designLab.importTheme");
-        break;
-      case "REQUEST_USE_CURRENT":
-        await vscode.commands.executeCommand("designLab.useCurrent");
-        break;
-      case "REQUEST_START_BLANK":
-        await vscode.commands.executeCommand("designLab.startBlank");
-        break;
-      case "REQUEST_EXPORT_JSON":
-        await vscode.commands.executeCommand("designLab.export.json");
-        break;
-      case "REQUEST_EXPORT_CSS":
-        await vscode.commands.executeCommand("designLab.export.css");
-        break;
-      case "REQUEST_EXPORT_VSIX":
-        await vscode.commands.executeCommand("designLab.export.vsix");
-        break;
+			case "REQUEST_IMPORT":
+				await vscode.commands.executeCommand("designLab.importTheme");
+				break;
+			case "REQUEST_USE_CURRENT":
+				await vscode.commands.executeCommand("designLab.useCurrent");
+				break;
+			case "REQUEST_START_BLANK":
+				await vscode.commands.executeCommand("designLab.startBlank");
+				break;
+			case "REQUEST_EXPORT_JSON":
+				await vscode.commands.executeCommand("designLab.export.json");
+				break;
+			case "REQUEST_EXPORT_CSS":
+				await vscode.commands.executeCommand("designLab.export.css");
+				break;
+			case "REQUEST_EXPORT_VSIX":
+				await vscode.commands.executeCommand("designLab.export.vsix");
+				break;
 			case "APPLY_PREVIEW":
 				await applyPreview(msg.payload);
 				break;

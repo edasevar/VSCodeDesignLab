@@ -29,7 +29,20 @@ window.addEventListener("message", (e) => {
 		model.semanticTokens = current.semanticTokens?.rules || {};
 		renderAll();
 	}
-	if (type === "LOAD_CURRENT" || type === "LOAD_IMPORTED") {
+	if (type === "LOAD_CURRENT") {
+		model.colors = mergeColors(model.colors, payload.colors || {});
+		model.tokenColors = mergeTokenRules(
+			model.tokenColors,
+			payload.tokenColors || []
+		);
+		model.semanticTokens = mergeSemanticRules(
+			model.semanticTokens,
+			payload.semanticTokens || {}
+		);
+		renderAll();
+		pushPreview();
+	}
+	if (type === "LOAD_IMPORTED") {
 		model.colors = payload.colors || {};
 		model.tokenColors = payload.tokenColors || [];
 		model.semanticTokens = payload.semanticTokens || {};
@@ -195,7 +208,7 @@ function mergeHexWithAlpha(base6: string, alphaPct: number): string {
 
 function renderTokens() {
 	const root = document.getElementById("panel-tokens")!;
-		const rows = model.tokenColors.map((r, idx) => tokenRow(r, idx)).join("");
+	const rows = model.tokenColors.map((r, idx) => tokenRow(r, idx)).join("");
 	root.innerHTML = `
 		<button id="add-token">Add Rule</button>
     <div>${rows}</div>`;
@@ -204,49 +217,59 @@ function renderTokens() {
 		renderTokens();
 		pushPreview();
 	});
-		root.querySelectorAll("[data-token-edit]").forEach((el) =>
+	root.querySelectorAll("[data-token-edit]").forEach((el) =>
 		el.addEventListener("input", (e) => {
 			const t = e.target as HTMLInputElement;
 			const idx = Number(t.dataset.index);
 			const field = t.dataset.field!;
-						if (field === "scope") model.tokenColors[idx].scope = t.value;
-						if (field === "fg") model.tokenColors[idx].settings.foreground = t.value;
-						if (field === "fs") model.tokenColors[idx].settings.fontStyle = t.value;
+			if (field === "scope") model.tokenColors[idx].scope = t.value;
+			if (field === "fg") model.tokenColors[idx].settings.foreground = t.value;
+			if (field === "fs") model.tokenColors[idx].settings.fontStyle = t.value;
 			pushPreview();
-			vscode.postMessage({ type: "LOCATE", payload: { elementId: "demo-editor" } });
-				})
+			vscode.postMessage({
+				type: "LOCATE",
+				payload: { elementId: "demo-editor" },
+			});
+		})
 	);
-		root.querySelectorAll("[data-token-remove]").forEach((btn) =>
-				btn.addEventListener("click", (e) => {
-						const i = Number((e.currentTarget as HTMLElement).dataset.index);
-						model.tokenColors.splice(i, 1);
-						renderTokens();
-						pushPreview();
-						vscode.postMessage({ type: "LOCATE", payload: { elementId: "demo-editor" } });
-				})
-		);
-		root.querySelectorAll("[data-fs]").forEach((cb) =>
-			cb.addEventListener("change", (e) => {
-				const t = e.target as HTMLInputElement;
-				const i = Number(t.dataset.index);
-				const val = t.value;
-				const cur = (model.tokenColors[i].settings.fontStyle || "")
-					.split(/\s+/)
-					.filter(Boolean);
-				const set = new Set(cur);
-				if (t.checked) set.add(val);
-				else set.delete(val);
-				model.tokenColors[i].settings.fontStyle = Array.from(set).join(" ") || undefined;
-				pushPreview();
-				vscode.postMessage({ type: "LOCATE", payload: { elementId: "demo-editor" } });
-			})
-		);
+	root.querySelectorAll("[data-token-remove]").forEach((btn) =>
+		btn.addEventListener("click", (e) => {
+			const i = Number((e.currentTarget as HTMLElement).dataset.index);
+			model.tokenColors.splice(i, 1);
+			renderTokens();
+			pushPreview();
+			vscode.postMessage({
+				type: "LOCATE",
+				payload: { elementId: "demo-editor" },
+			});
+		})
+	);
+	root.querySelectorAll("[data-fs]").forEach((cb) =>
+		cb.addEventListener("change", (e) => {
+			const t = e.target as HTMLInputElement;
+			const i = Number(t.dataset.index);
+			const val = t.value;
+			const cur = (model.tokenColors[i].settings.fontStyle || "")
+				.split(/\s+/)
+				.filter(Boolean);
+			const set = new Set(cur);
+			if (t.checked) set.add(val);
+			else set.delete(val);
+			model.tokenColors[i].settings.fontStyle =
+				Array.from(set).join(" ") || undefined;
+			pushPreview();
+			vscode.postMessage({
+				type: "LOCATE",
+				payload: { elementId: "demo-editor" },
+			});
+		})
+	);
 }
 
 function tokenRow(r: Rule, idx: number) {
-		const fs = (r.settings.fontStyle || "").split(/\s+/).filter(Boolean);
-		const has = (k: string) => fs.includes(k);
-		return `<div class="row">
+	const fs = (r.settings.fontStyle || "").split(/\s+/).filter(Boolean);
+	const has = (k: string) => fs.includes(k);
+	return `<div class="row">
 		<label>scope</label><input data-token-edit data-index="${idx}" data-field="scope" value="${
 		Array.isArray(r.scope) ? r.scope.join(", ") : r.scope || ""
 	}" />
@@ -255,17 +278,17 @@ function tokenRow(r: Rule, idx: number) {
 	}" />
 		<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
 			<label><input type="checkbox" data-fs data-index="${idx}" value="bold" ${
-				has("bold") ? "checked" : ""
-			}/> bold</label>
+		has("bold") ? "checked" : ""
+	}/> bold</label>
 			<label><input type="checkbox" data-fs data-index="${idx}" value="italic" ${
-				has("italic") ? "checked" : ""
-			}/> italic</label>
+		has("italic") ? "checked" : ""
+	}/> italic</label>
 			<label><input type="checkbox" data-fs data-index="${idx}" value="underline" ${
-				has("underline") ? "checked" : ""
-			}/> underline</label>
+		has("underline") ? "checked" : ""
+	}/> underline</label>
 			<label><input type="checkbox" data-fs data-index="${idx}" value="strikethrough" ${
-				has("strikethrough") ? "checked" : ""
-			}/> strikethrough</label>
+		has("strikethrough") ? "checked" : ""
+	}/> strikethrough</label>
 		</fieldset>
 		<button data-token-remove data-index="${idx}">Remove</button>
   </div>`;
@@ -323,30 +346,31 @@ function renderSemantic() {
 			const set = new Set(cur);
 			if (t.checked) set.add(t.value);
 			else set.delete(t.value);
-			model.semanticTokens[sel].fontStyle = Array.from(set).join(" ") || undefined;
+			model.semanticTokens[sel].fontStyle =
+				Array.from(set).join(" ") || undefined;
 			pushPreview();
 		})
 	);
 }
 
 function semRow(sel: string, s: any, i: number) {
-		const fs = (s.fontStyle || "").split(/\s+/).filter(Boolean);
-		const has = (k: string) => fs.includes(k);
-		return `<div class="row">
+	const fs = (s.fontStyle || "").split(/\s+/).filter(Boolean);
+	const has = (k: string) => fs.includes(k);
+	return `<div class="row">
     <label>selector</label><input data-sem data-index="${i}" data-field="selector" value="${sel}"/>
     <label>foreground</label><input data-sem data-index="${i}" data-field="fg" value="${
 		s.foreground || ""
 	}"/>
 		<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
 			<label><input type="checkbox" data-sem-fs data-index="${i}" value="bold" ${
-				has("bold") ? "checked" : ""
-			}/> bold</label>
+		has("bold") ? "checked" : ""
+	}/> bold</label>
 			<label><input type="checkbox" data-sem-fs data-index="${i}" value="italic" ${
-				has("italic") ? "checked" : ""
-			}/> italic</label>
+		has("italic") ? "checked" : ""
+	}/> italic</label>
 			<label><input type="checkbox" data-sem-fs data-index="${i}" value="underline" ${
-				has("underline") ? "checked" : ""
-			}/> underline</label>
+		has("underline") ? "checked" : ""
+	}/> underline</label>
 		</fieldset>
 		<button data-sem-remove data-index="${i}">Remove</button>
   </div>`;
@@ -404,16 +428,60 @@ function getDemosHtml() {
   <section class="demo" id="demo-lists" style="display:none"><div>Lists/Tabs</div></section>`;
 }
 
+// Merge helpers: base retains precedence; add contributes missing keys/rules
+function mergeColors(
+	base: Record<string, string>,
+	add: Record<string, string>
+) {
+	return { ...add, ...base }; // base wins
+}
+
+function normScopeKey(scope: string | string[]): string {
+	if (Array.isArray(scope)) return scope.map((s) => s.trim()).join(",");
+	return String(scope || "").trim();
+}
+
+function mergeTokenRules(base: Rule[], add: Rule[]): Rule[] {
+	const map = new Map<string, Rule>();
+	// base first so it wins
+	for (const r of base) map.set(normScopeKey(r.scope), r);
+	for (const r of add) {
+		const k = normScopeKey(r.scope);
+		if (!map.has(k)) map.set(k, r);
+	}
+	return Array.from(map.values());
+}
+
+function mergeSemanticRules(
+	base: Record<string, { foreground?: string; fontStyle?: string }>,
+	add: Record<string, { foreground?: string; fontStyle?: string }>
+) {
+	return { ...add, ...base }; // base wins
+}
+
 // boot
 document.addEventListener("DOMContentLoaded", () => {
 	// Toolbar wiring
-	const byId = (id: string) => document.getElementById(id) as HTMLButtonElement | null;
-	byId("btn-import")?.addEventListener("click", () => vscode.postMessage({ type: "REQUEST_IMPORT" }));
-	byId("btn-use")?.addEventListener("click", () => vscode.postMessage({ type: "REQUEST_USE_CURRENT" }));
-	byId("btn-blank")?.addEventListener("click", () => vscode.postMessage({ type: "REQUEST_START_BLANK" }));
-	byId("btn-export-json")?.addEventListener("click", () => vscode.postMessage({ type: "REQUEST_EXPORT_JSON" }));
-	byId("btn-export-css")?.addEventListener("click", () => vscode.postMessage({ type: "REQUEST_EXPORT_CSS" }));
-	byId("btn-export-vsix")?.addEventListener("click", () => vscode.postMessage({ type: "REQUEST_EXPORT_VSIX" }));
+	const byId = (id: string) =>
+		document.getElementById(id) as HTMLButtonElement | null;
+	byId("btn-import")?.addEventListener("click", () =>
+		vscode.postMessage({ type: "REQUEST_IMPORT" })
+	);
+	byId("btn-use")?.addEventListener("click", () =>
+		vscode.postMessage({ type: "REQUEST_USE_CURRENT" })
+	);
+	byId("btn-blank")?.addEventListener("click", () =>
+		vscode.postMessage({ type: "REQUEST_START_BLANK" })
+	);
+	byId("btn-export-json")?.addEventListener("click", () =>
+		vscode.postMessage({ type: "REQUEST_EXPORT_JSON" })
+	);
+	byId("btn-export-css")?.addEventListener("click", () =>
+		vscode.postMessage({ type: "REQUEST_EXPORT_CSS" })
+	);
+	byId("btn-export-vsix")?.addEventListener("click", () =>
+		vscode.postMessage({ type: "REQUEST_EXPORT_VSIX" })
+	);
 	document.querySelectorAll(".tab").forEach((t) =>
 		t.addEventListener("click", () => {
 			document

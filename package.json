@@ -3,7 +3,7 @@
 	"displayName": "VS Code Design Lab",
 	"description": "Two-panel theme editor with live preview, import/export (JSON/JSONC/VSIX), and element locator.",
 	"publisher": "edasevar",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"engines": {
 		"vscode": "^1.88.0"
 	},
@@ -64,7 +64,7 @@
 	},
 	"devDependencies": {
 		"@types/vscode": "^1.103.0",
-		"copy-webpack-plugin": "^12.0.2",
+		"copy-webpack-plugin": "^13.0.1",
 		"ts-loader": "^9.5.2",
 		"typescript": "^5.9.2",
 		"webpack": "^5.101.2",
