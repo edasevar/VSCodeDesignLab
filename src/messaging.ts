@@ -8,6 +8,8 @@ export const createPanel = (
 	panel: vscode.WebviewPanel,
 	ctx: vscode.ExtensionContext
 ) => {
+	// cache of the last payload sent from the webview so exporters can use it
+	let lastModel: any | undefined;
 	panel.webview.html = getHtml(panel, ctx);
 	// Handle messages from webview
 	panel.webview.onDidReceiveMessage(async (msg) => {
@@ -39,7 +41,11 @@ export const createPanel = (
 			case "REQUEST_EXPORT_VSIX":
 				await vscode.commands.executeCommand("designLab.export.vsix");
 				break;
+			case "REQUEST_SAVE_THEME":
+				await vscode.commands.executeCommand("designLab.export.json");
+				break;
 			case "APPLY_PREVIEW":
+				lastModel = msg.payload;
 				await applyPreview(msg.payload);
 				break;
 			case "LOCATE":
@@ -52,6 +58,14 @@ export const createPanel = (
 	vscode.commands.registerCommand("vscode.postToDesignLab", (message: any) =>
 		panel.webview.postMessage(message)
 	);
+
+	// expose the last model for exporters; falls back to reading current settings if not yet available
+	vscode.commands.registerCommand("designLab.getLastModel", async () => {
+		if (lastModel) return lastModel;
+		// If no model yet, ask preview side for current settings as a basic fallback
+		// Keep this minimal to avoid dependency cycles; exporters can also fallback further.
+		return undefined;
+	});
 };
 
 function getHtml(panel: vscode.WebviewPanel, ctx: vscode.ExtensionContext) {

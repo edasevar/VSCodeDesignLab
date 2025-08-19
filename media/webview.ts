@@ -34,6 +34,24 @@ let model = {
 	tokenColors: [] as Rule[],
 	semanticTokens: {} as Semantic,
 };
+
+// Coercion helpers for payloads coming from settings
+function coerceTokenRules(x: any): Rule[] {
+	if (Array.isArray(x)) return x as Rule[];
+	if (x && Array.isArray(x.textMateRules)) return x.textMateRules as Rule[];
+	return [];
+}
+function coerceSemanticRules(
+	x: any
+): Record<string, { foreground?: string; fontStyle?: string }> {
+	if (x && typeof x === "object" && !Array.isArray(x)) {
+		if (x.rules && typeof x.rules === "object") return x.rules;
+		// if it's the plain rules map already
+		const { enabled, ...rest } = x as any;
+		return rest && Object.keys(rest).length ? (rest as any) : {};
+	}
+	return {};
+}
 // Debounce state for preview updates
 let previewTimer: number | undefined;
 const PREVIEW_DEBOUNCE_MS = 120;
@@ -173,14 +191,14 @@ window.addEventListener("message", (e) => {
 		}
 	}
 	if (type === "LOAD_CURRENT") {
-		model.colors = mergeColors(model.colors, payload.colors || {});
-		model.tokenColors = mergeTokenRules(
-			model.tokenColors,
-			payload.tokenColors || []
-		);
+		// For "Use Current", let current settings override existing values.
+		model.colors = mergeColors(payload.colors || {}, model.colors);
+		const incomingRules = coerceTokenRules(payload.tokenColors);
+		model.tokenColors = mergeTokenRules(incomingRules, model.tokenColors);
+		const incomingSem = coerceSemanticRules(payload.semanticTokens);
 		model.semanticTokens = mergeSemanticRules(
-			model.semanticTokens,
-			payload.semanticTokens || {}
+			incomingSem,
+			model.semanticTokens
 		);
 		renderAll();
 		resetHistory();
@@ -201,10 +219,25 @@ window.addEventListener("message", (e) => {
 
 function pulse(id?: string) {
 	if (!id) return;
+	// Try preview area first
 	const el = document.getElementById(id);
-	if (!el) return;
-	el.classList.add("locate-pulse");
-	setTimeout(() => el.classList.remove("locate-pulse"), 1000);
+	if (el) {
+		el.classList.add("locate-pulse");
+		setTimeout(() => el.classList.remove("locate-pulse"), 1000);
+	}
+	// Also scroll and pulse the left panel row if it's a color key
+	if (id.startsWith("demo-")) {
+		// When called for preview areas, only pulse the preview; do not scroll the left list.
+		// Scrolling all matching rows causes the panel to jump to the bottom on each edit.
+	} else if (id.startsWith("row-")) {
+		// Direct row pulse (for future use)
+		const row = document.getElementById(id);
+		if (row) {
+			row.classList.add("locate-pulse");
+			row.scrollIntoView({ behavior: "smooth", block: "center" });
+			setTimeout(() => row.classList.remove("locate-pulse"), 1000);
+		}
+	}
 }
 
 function renderAll() {
@@ -215,24 +248,84 @@ function renderAll() {
 }
 
 function inputRow(label: string, key: string, description: string) {
-	const id = `color-${key}`;
 	const v = model.colors[key] || "";
 	const alpha = alphaFromHex(v);
+	// Pick an icon based on key/category (simple heuristic)
+	let icon = "";
+	if (key.includes("background")) icon = "🖼️";
+	else if (key.includes("foreground")) icon = "🔤";
+	else if (key.includes("border")) icon = "⬛";
+	else if (key.includes("badge")) icon = "🏷️";
+	else if (key.includes("error")) icon = "❌";
+	else if (key.includes("warning")) icon = "⚠️";
+	else if (key.includes("info")) icon = "ℹ️";
+	else if (key.includes("active")) icon = "⭐";
+	else if (key.includes("inactive")) icon = "⏸️";
+	else if (key.includes("focus")) icon = "🎯";
+	else if (key.includes("selection")) icon = "🖱️";
+	else if (key.includes("highlight")) icon = "💡";
+	else if (key.includes("tab")) icon = "📑";
+	else if (key.includes("list")) icon = "📋";
+	else if (key.includes("status")) icon = "📶";
+	else if (key.includes("panel")) icon = "🗂️";
+	else if (key.includes("terminal")) icon = "⌨️";
+	else if (key.includes("editor")) icon = "📝";
+	else if (key.includes("action")) icon = "⚡";
+	else if (key.includes("find")) icon = "🔍";
+	else if (key.includes("notification")) icon = "🔔";
+	else if (key.includes("problems")) icon = "🐞";
+	else if (key.includes("title")) icon = "🏷️";
+	else icon = "🎨";
+	const { short, full, truncated } = summarizeDescription(description || "");
+	const descAttrs = `data-full="${escapeHtml(full)}"`;
+	const toggle = truncated
+		? `<button class="desc-toggle" type="button" aria-label="Expand description" data-toggle-desc>More</button>`
+		: "";
 	return `
-    <div class="row">
-      <div class="row-head">
-        <strong>${label}</strong>
-        <button data-locate="${key}" title="Locate in Preview" aria-label="Locate ${key} in preview">Locate</button>
-      </div>
-      <div class="row-body">
-        <input type="color" data-key="${key}" value="${coerceHex(
+				<div class="row" id="row-${key}">
+						<div class="row-head">
+							<div class="row-label">${icon} ${label}</div>
+							<button class="locate-btn" type="button" data-locate="${key}" title="Locate in preview">Locate</button>
+						</div>
+						<div class="row-body">
+								<span class="chip" aria-hidden="true" title="${v.toUpperCase()} (${alpha}%)"><span class="chip-fill" style="background:${
+		isValidHex(v) ? normalizeHex(v) : "#000000"
+	}"></span></span>
+								<input type="color" data-key="${key}" value="${coerceHex(
 		v
 	)}" aria-label="Color value for ${key}" />
-		<input type="text" data-key="${key}" value="${v}" placeholder="#RRGGBB or #RRGGBBAA" aria-label="Hex color for ${key}" />
-		<input type="range" min="0" max="100" step="1" data-alpha-key="${key}" value="${alpha}" title="Alpha ${alpha}%" aria-label="Alpha for ${key}" />
-        <span class="desc">${description || ""}</span>
-      </div>
-    </div>`;
+								<input type="text" data-key="${key}" value="${v}" placeholder="#RRGGBB or #RRGGBBAA" aria-label="Hex color for ${key}" />
+								<input type="range" min="0" max="100" step="1" data-alpha-key="${key}" value="${alpha}" title="Alpha ${alpha}%" aria-label="Alpha for ${key}" />
+						</div>
+						<div class="row-desc">
+							<span class="desc" ${descAttrs}>${short}</span> ${toggle}
+						</div>
+				</div>
+		`;
+}
+
+function escapeHtml(s: string) {
+	return s
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
+function renderDescription(s: string) {
+	if (!s) return "";
+	const clean = s.replace(/\s+/g, " ").trim();
+	if (clean.length > 140) return escapeHtml(clean.slice(0, 137)) + "...";
+	return escapeHtml(clean);
+}
+
+function summarizeDescription(s: string) {
+	const clean = (s || "").replace(/\s+/g, " ").trim();
+	const truncated = clean.length > 160;
+	const short = truncated
+		? escapeHtml(clean.slice(0, 157)) + "..."
+		: escapeHtml(clean);
+	return { short, full: clean, truncated };
 }
 function coerceHex(s: string) {
 	// fallback to #000000 if invalid
@@ -254,16 +347,27 @@ function normalizeHex(s: string) {
 
 function renderColors() {
 	const root = document.getElementById("panel-colors")!;
+	// Preserve current open state and scroll before rerender
+	const prevOpen: Record<string, boolean> = {};
+	root.querySelectorAll("details.category").forEach((d) => {
+		const det = d as HTMLDetailsElement;
+		const title = det.querySelector("summary")?.textContent?.trim() || "";
+		if (title) prevOpen[title] = det.open;
+	});
+	const prevScroll = (root as HTMLElement).scrollTop;
+	// Render categories only (palette row removed per user request)
 	root.innerHTML = categories
 		.map(
 			(c) => `
-		<details class="category" open>
-			<summary>${c.name}</summary>
-			<div class="cat-list">
-				${c.items.map((it) => inputRow(it.key, it.key, it.description || "")).join("")}
-			</div>
-		</details>
-	`
+			<details class="category" ${prevOpen[c.name] ? "open" : ""}>
+				<summary><span class="cat-icon">${categoryIcon(c.name)}</span> ${
+				c.name
+			}</summary>
+				<div class="cat-list">
+					${c.items.map((it) => inputRow(it.key, it.key, it.description || "")).join("")}
+				</div>
+			</details>
+		`
 		)
 		.join("");
 	root
@@ -283,6 +387,25 @@ function renderColors() {
 			});
 		});
 	});
+	// Restore previous scroll position
+	(root as HTMLElement).scrollTop = prevScroll;
+}
+
+function categoryIcon(name: string) {
+	const n = (name || "").toLowerCase();
+	if (n.includes("editor")) return "📝";
+	if (n.includes("tab")) return "📑";
+	if (n.includes("status")) return "📶";
+	if (n.includes("panel")) return "🗂️";
+	if (n.includes("terminal")) return "⌨️";
+	if (n.includes("debug") || n.includes("problems")) return "🐞";
+	if (n.includes("list") || n.includes("explorer")) return "📋";
+	if (n.includes("activity") || n.includes("sidebar")) return "🧭";
+	if (n.includes("title")) return "🏷️";
+	if (n.includes("git") || n.includes("scm")) return "🌿";
+	if (n.includes("ansi")) return "🎨";
+	if (n.includes("notification")) return "🔔";
+	return "🎯";
 }
 
 function handleColorInput(ev: Event) {
@@ -290,6 +413,7 @@ function handleColorInput(ev: Event) {
 	const key = t.dataset.key!;
 	let val = t.value.trim();
 	const parent = t.parentElement!;
+	const chip = parent.querySelector(".chip-fill") as HTMLSpanElement | null;
 	const textInput = parent.querySelector(
 		'input[type="text"][data-key="' + key + '"]'
 	) as HTMLInputElement;
@@ -320,24 +444,23 @@ function handleColorInput(ev: Event) {
 	if (!isValidHex(val)) {
 		textInput.classList.add("invalid");
 		textInput.setAttribute("aria-invalid", "true");
+		if (chip) chip.style.background = "#000000";
 		return;
 	}
 	textInput.classList.remove("invalid");
 	textInput.setAttribute("aria-invalid", "false");
 	recordHistory();
 	model.colors[key] = normalizeHex(val);
+	if (chip) chip.style.background = model.colors[key];
 	pushPreview();
-	// auto-locate in preview when editing a color
-	vscode.postMessage({
-		type: "LOCATE",
-		payload: { elementId: demoIdForKey(key) },
-	});
+	// Do not auto-locate on each edit to avoid scrolling the list
 }
 
 function handleAlphaInput(ev: Event) {
 	const t = ev.target as HTMLInputElement; // range
 	const key = t.dataset.alphaKey!;
 	const parent = t.parentElement!;
+	const chip = parent.querySelector(".chip-fill") as HTMLSpanElement | null;
 	const colorInput = parent.querySelector(
 		'input[type="color"][data-key="' + key + '"]'
 	) as HTMLInputElement;
@@ -349,12 +472,9 @@ function handleAlphaInput(ev: Event) {
 	textInput.value = merged;
 	recordHistory();
 	model.colors[key] = merged;
+	if (chip) chip.style.background = merged;
 	pushPreview();
-	// auto-locate in preview when changing alpha
-	vscode.postMessage({
-		type: "LOCATE",
-		payload: { elementId: demoIdForKey(key) },
-	});
+	// Avoid auto-locate to prevent scroll jumps
 }
 
 function clampPct(n: number) {
@@ -379,10 +499,19 @@ function mergeHexWithAlpha(base6: string, alphaPct: number): string {
 
 function renderTokens() {
 	const root = document.getElementById("panel-tokens")!;
+	// Preserve scroll position and advanced open states per index
+	const prevScroll = (root as HTMLElement).scrollTop;
+	const expanded = new Set<number>();
+	root.querySelectorAll(".row").forEach((row, i) => {
+		const btn = (row as HTMLElement).querySelector(
+			"[data-toggle-adv]"
+		) as HTMLButtonElement | null;
+		if (btn && btn.getAttribute("aria-expanded") === "true") expanded.add(i);
+	});
 	const rows = model.tokenColors.map((r, idx) => tokenRow(r, idx)).join("");
 	root.innerHTML = `
 		<button id="add-token" aria-label="Add token rule">Add Rule</button>
-    <div>${rows}</div>`;
+		<div>${rows}</div>`;
 	document.getElementById("add-token")!.addEventListener("click", () => {
 		recordHistory();
 		model.tokenColors.push({ scope: "", settings: {} });
@@ -409,10 +538,6 @@ function renderTokens() {
 			}
 			if (field === "fs") model.tokenColors[idx].settings.fontStyle = t.value;
 			pushPreview();
-			vscode.postMessage({
-				type: "LOCATE",
-				payload: { elementId: "demo-editor" },
-			});
 		})
 	);
 	root.querySelectorAll("[data-token-remove]").forEach((btn) =>
@@ -422,10 +547,6 @@ function renderTokens() {
 			model.tokenColors.splice(i, 1);
 			renderTokens();
 			pushPreview();
-			vscode.postMessage({
-				type: "LOCATE",
-				payload: { elementId: "demo-editor" },
-			});
 		})
 	);
 	root.querySelectorAll("[data-fs]").forEach((cb) =>
@@ -443,50 +564,119 @@ function renderTokens() {
 			model.tokenColors[i].settings.fontStyle =
 				Array.from(set).join(" ") || undefined;
 			pushPreview();
+		})
+	);
+	// Locate buttons
+	root.querySelectorAll(".locate-btn").forEach((btn) =>
+		btn.addEventListener("click", () => {
 			vscode.postMessage({
 				type: "LOCATE",
 				payload: { elementId: "demo-editor" },
 			});
 		})
 	);
+	// Advanced toggles
+	root.querySelectorAll("[data-toggle-adv]").forEach((btn) =>
+		btn.addEventListener("click", (e) => {
+			e.preventDefault();
+			const b = btn as HTMLButtonElement;
+			const row = b.closest(".row");
+			if (!row) return;
+			const adv = row.querySelector(".advanced") as HTMLElement | null;
+			if (!adv) return;
+			const expanded = b.getAttribute("aria-expanded") === "true";
+			if (expanded) {
+				adv.classList.add("collapsed");
+				b.textContent = "Advanced";
+				b.setAttribute("aria-expanded", "false");
+			} else {
+				adv.classList.remove("collapsed");
+				b.textContent = "Less";
+				b.setAttribute("aria-expanded", "true");
+			}
+		})
+	);
+	// Re-open advanced sections that were previously expanded
+	root.querySelectorAll(".row").forEach((row, i) => {
+		if (!expanded.has(i)) return;
+		const adv = (row as HTMLElement).querySelector(
+			".advanced"
+		) as HTMLElement | null;
+		const btn = (row as HTMLElement).querySelector(
+			"[data-toggle-adv]"
+		) as HTMLButtonElement | null;
+		if (adv && btn) {
+			adv.classList.remove("collapsed");
+			btn.textContent = "Less";
+			btn.setAttribute("aria-expanded", "true");
+		}
+	});
+	// Restore scroll
+	(root as HTMLElement).scrollTop = prevScroll;
 }
 
 function tokenRow(r: Rule, idx: number) {
 	const fs = (r.settings.fontStyle || "").split(/\s+/).filter(Boolean);
 	const has = (k: string) => fs.includes(k);
 	return `<div class="row">
-		<label>scope</label><input data-token-edit aria-label="Token scope" data-index="${idx}" data-field="scope" value="${
+			<div class="row-head">
+				<div class="row-label">🎯 Token Rule ${idx + 1}</div>
+				<button class="locate-btn" type="button" title="Locate editor preview">Locate</button>
+			</div>
+			<div class="row-body">
+				<label>scope</label><input data-token-edit aria-label="Token scope" data-index="${idx}" data-field="scope" value="${
 		Array.isArray(r.scope) ? r.scope.join(", ") : r.scope || ""
 	}" />
-    <label>foreground</label><input data-token-edit aria-label="Token foreground color" data-index="${idx}" data-field="fg" value="${
+				<label>foreground</label>
+				<span class="chip" aria-hidden="true"><span class="chip-fill" style="background:${
+					isValidHex(r.settings.foreground || "")
+						? normalizeHex(r.settings.foreground!)
+						: "#000000"
+				}"></span></span>
+				<input data-token-edit aria-label="Token foreground color" data-index="${idx}" data-field="fg" value="${
 		r.settings.foreground || ""
 	}" />
-		<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
-			<label><input type="checkbox" data-fs data-index="${idx}" value="bold" ${
+			</div>
+			<div class="row-desc">
+				<button class="desc-toggle" type="button" data-toggle-adv aria-expanded="false">Advanced</button>
+				<div class="advanced collapsed">
+					<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
+						<label><input type="checkbox" data-fs data-index="${idx}" value="bold" ${
 		has("bold") ? "checked" : ""
 	}/> bold</label>
-			<label><input type="checkbox" data-fs data-index="${idx}" value="italic" ${
+						<label><input type="checkbox" data-fs data-index="${idx}" value="italic" ${
 		has("italic") ? "checked" : ""
 	}/> italic</label>
-			<label><input type="checkbox" data-fs data-index="${idx}" value="underline" ${
+						<label><input type="checkbox" data-fs data-index="${idx}" value="underline" ${
 		has("underline") ? "checked" : ""
 	}/> underline</label>
-			<label><input type="checkbox" data-fs data-index="${idx}" value="strikethrough" ${
+						<label><input type="checkbox" data-fs data-index="${idx}" value="strikethrough" ${
 		has("strikethrough") ? "checked" : ""
 	}/> strikethrough</label>
-		</fieldset>
-		<button data-token-remove data-index="${idx}" aria-label="Remove token rule ${
+					</fieldset>
+					<button data-token-remove data-index="${idx}" aria-label="Remove token rule ${
 		idx + 1
 	}">Remove</button>
-  </div>`;
+				</div>
+			</div>
+		</div>`;
 }
 
 function renderSemantic() {
 	const root = document.getElementById("panel-semantic")!;
+	// Preserve scroll and expanded states
+	const prevScroll = (root as HTMLElement).scrollTop;
+	const expanded = new Set<number>();
+	root.querySelectorAll(".row").forEach((row, i) => {
+		const btn = (row as HTMLElement).querySelector(
+			"[data-toggle-adv]"
+		) as HTMLButtonElement | null;
+		if (btn && btn.getAttribute("aria-expanded") === "true") expanded.add(i);
+	});
 	const entries = Object.entries(model.semanticTokens);
 	root.innerHTML = `
 		<button id="add-sem" aria-label="Add semantic rule">Add Semantic</button>
-    <div>${entries.map(([sel, s], i) => semRow(sel, s, i)).join("")}</div>`;
+	<div>${entries.map(([sel, s], i) => semRow(sel, s, i)).join("")}</div>`;
 	document.getElementById("add-sem")!.addEventListener("click", () => {
 		recordHistory();
 		model.semanticTokens["entity.name.new"] = {};
@@ -497,8 +687,8 @@ function renderSemantic() {
 		el.addEventListener("input", (e) => {
 			const t = e.target as HTMLInputElement;
 			const i = Number(t.dataset.index);
-			const entries = Object.keys(model.semanticTokens);
-			const sel = entries[i];
+			const keys = Object.keys(model.semanticTokens);
+			const sel = keys[i];
 			recordHistory();
 			if (t.dataset.field === "selector") {
 				const val = t.value;
@@ -507,14 +697,24 @@ function renderSemantic() {
 				model.semanticTokens[val] = cur;
 			} else if (t.dataset.field === "fg") {
 				const v = t.value.trim();
+				const chip = (
+					t.previousElementSibling &&
+					(t.previousElementSibling as HTMLElement).classList.contains("chip")
+						? (t.previousElementSibling as HTMLElement).querySelector(
+								".chip-fill"
+						  )
+						: null
+				) as HTMLSpanElement | null;
 				if (!isValidHex(v)) {
 					t.classList.add("invalid");
 					t.setAttribute("aria-invalid", "true");
+					if (chip) chip.style.background = "#000000";
 					return;
 				}
 				t.classList.remove("invalid");
 				t.setAttribute("aria-invalid", "false");
 				model.semanticTokens[sel].foreground = normalizeHex(v);
+				if (chip) chip.style.background = model.semanticTokens[sel].foreground!;
 			} else if (t.dataset.field === "fs") {
 				model.semanticTokens[sel].fontStyle = t.value;
 			}
@@ -550,35 +750,103 @@ function renderSemantic() {
 			pushPreview();
 		})
 	);
+	// Locate buttons
+	root.querySelectorAll(".locate-btn").forEach((btn) =>
+		btn.addEventListener("click", () => {
+			vscode.postMessage({
+				type: "LOCATE",
+				payload: { elementId: "demo-editor" },
+			});
+		})
+	);
+	// Advanced toggles
+	root.querySelectorAll("[data-toggle-adv]").forEach((btn) =>
+		btn.addEventListener("click", (e) => {
+			e.preventDefault();
+			const b = btn as HTMLButtonElement;
+			const row = b.closest(".row");
+			if (!row) return;
+			const adv = row.querySelector(".advanced") as HTMLElement | null;
+			if (!adv) return;
+			const expanded = b.getAttribute("aria-expanded") === "true";
+			if (expanded) {
+				adv.classList.add("collapsed");
+				b.textContent = "Advanced";
+				b.setAttribute("aria-expanded", "false");
+			} else {
+				adv.classList.remove("collapsed");
+				b.textContent = "Less";
+				b.setAttribute("aria-expanded", "true");
+			}
+		})
+	);
+	// Re-open advanced sections that were previously expanded
+	root.querySelectorAll(".row").forEach((row, i) => {
+		if (!expanded.has(i)) return;
+		const adv = (row as HTMLElement).querySelector(
+			".advanced"
+		) as HTMLElement | null;
+		const btn = (row as HTMLElement).querySelector(
+			"[data-toggle-adv]"
+		) as HTMLButtonElement | null;
+		if (adv && btn) {
+			adv.classList.remove("collapsed");
+			btn.textContent = "Less";
+			btn.setAttribute("aria-expanded", "true");
+		}
+	});
+	// Restore scroll
+	(root as HTMLElement).scrollTop = prevScroll;
 }
 
 function semRow(sel: string, s: any, i: number) {
 	const fs = (s.fontStyle || "").split(/\s+/).filter(Boolean);
 	const has = (k: string) => fs.includes(k);
 	return `<div class="row">
-	<label>selector</label><input data-sem aria-label="Semantic selector" data-index="${i}" data-field="selector" value="${sel}"/>
-	<label>foreground</label><input data-sem aria-label="Semantic foreground color" data-index="${i}" data-field="fg" value="${
+			<div class="row-head">
+				<div class="row-label">🧠 Semantic ${i + 1}</div>
+				<button class="locate-btn" type="button" title="Locate editor preview">Locate</button>
+			</div>
+			<div class="row-body">
+				<label>selector</label><input data-sem aria-label="Semantic selector" data-index="${i}" data-field="selector" value="${sel}"/>
+				<label>foreground</label>
+				<span class="chip" aria-hidden="true"><span class="chip-fill" style="background:${
+					isValidHex(s.foreground || "")
+						? normalizeHex(s.foreground)
+						: "#000000"
+				}"></span></span>
+				<input data-sem aria-label="Semantic foreground color" data-index="${i}" data-field="fg" value="${
 		s.foreground || ""
 	}"/>
-		<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
-			<label><input type="checkbox" data-sem-fs data-index="${i}" value="bold" ${
+			</div>
+			<div class="row-desc">
+				<button class="desc-toggle" type="button" data-toggle-adv aria-expanded="false">Advanced</button>
+				<div class="advanced collapsed">
+					<fieldset style="display:inline-flex;gap:6px;border:none;padding:0;margin:0">
+						<label><input type="checkbox" data-sem-fs data-index="${i}" value="bold" ${
 		has("bold") ? "checked" : ""
 	}/> bold</label>
-			<label><input type="checkbox" data-sem-fs data-index="${i}" value="italic" ${
+						<label><input type="checkbox" data-sem-fs data-index="${i}" value="italic" ${
 		has("italic") ? "checked" : ""
 	}/> italic</label>
-			<label><input type="checkbox" data-sem-fs data-index="${i}" value="underline" ${
+						<label><input type="checkbox" data-sem-fs data-index="${i}" value="underline" ${
 		has("underline") ? "checked" : ""
 	}/> underline</label>
-		</fieldset>
-		<button data-sem-remove data-index="${i}" aria-label="Remove semantic rule ${
+					</fieldset>
+					<button data-sem-remove data-index="${i}" aria-label="Remove semantic rule ${
 		i + 1
 	}">Remove</button>
-  </div>`;
+				</div>
+			</div>
+		</div>`;
 }
 
 function renderPreviewDemos() {
 	const root = document.getElementById("preview")!;
+	// Preserve currently active demo tab
+	const activeDemo =
+		(document.querySelector(".ptab.active") as HTMLElement | null)?.dataset
+			.demo || "editor";
 	root.innerHTML = getDemosHtml();
 	applyTokenStyles();
 	// clicking preview tabs
@@ -596,6 +864,12 @@ function renderPreviewDemos() {
 			saveState();
 		})
 	);
+	// Ensure the previously active demo is visible after rerender
+	document
+		.querySelectorAll(".demo")
+		.forEach((x) => ((x as HTMLElement).style.display = "none"));
+	const activeEl = document.getElementById("demo-" + activeDemo);
+	if (activeEl) (activeEl as HTMLElement).style.display = "block";
 }
 
 function pushPreview() {
@@ -673,20 +947,78 @@ function demoIdForKey(key: string): string {
 
 // Minimal demos
 function getDemosHtml() {
+	// VS Code-like frame with sidebar, file tree, and your preview tabs/logic
 	return `
-	<section class="demo" id="demo-editor" style="display:block">
-		<div id="editor" style="border:1px solid var(--vscode-editorWidget-border);display:grid;grid-template-columns:46px 1fr;min-height:220px">
-			<div class="gutter" style="background:var(--vscode-editorGutter-background);border-right:1px solid var(--vscode-editorWidget-border);padding:8px 6px;color:var(--vscode-editorLineNumber-foreground)">1\n2\n3\n4\n5</div>
-			<div class="code" style="position:relative;padding:8px;">
-				<div class="active-line" style="position:absolute;left:0;right:0;top:8px;height:1.4em;background:var(--vscode-editor-lineHighlightBackground)"></div>
-				<div class="selection" style="position:absolute;left:60px;top:8px;width:220px;height:1.4em;background:var(--vscode-editor-selectionBackground)"></div>
-				<div class="cursor" style="position:absolute;left:100px;top:8px;width:1px;height:1.4em;background:var(--vscode-editorCursor-foreground)"></div>
-				<pre id="code-sample" style="margin:0;white-space:pre;tab-size:2;color:var(--vscode-editor-foreground)"><code>
+			 <section class="demo" id="demo-editor" style="display:block">
+				 <div class="vsc-frame vsc-frame-preview">
+					 <div class="vsc-titlebar">
+						 VS Code Design Lab — Editor Preview
+						 <button id="btn-save-theme" class="save-theme-btn" title="Save Theme">
+							 <span class="icon">💾</span> Save Theme
+						 </button>
+					 </div>
+					 <div class="vsc-main">
+						 <aside class="vsc-sidebar">
+							 <div class="vsc-sidebar-icon active" title="Explorer">📂</div>
+							 <div class="vsc-sidebar-icon" title="Search">🔍</div>
+							 <div class="vsc-sidebar-icon" title="Source Control">🔀</div>
+							 <div class="vsc-sidebar-icon" title="Run &amp; Debug">🐞</div>
+							 <div class="vsc-sidebar-icon" title="Extensions">🧩</div>
+						 </aside>
+						 <div class="vsc-content">
+							 <div class="vsc-filetree">
+								 <div class="filetree-title">EXPLORER</div>
+								 <div class="filetree-folder"><span class="filetree-folder-icon">📁</span> src
+									 <div class="filetree-file"><span class="filetree-file-icon">📄</span> app.ts</div>
+									 <div class="filetree-file"><span class="filetree-file-icon">📄</span> utils.ts</div>
+									 <div class="filetree-file"><span class="filetree-file-icon">📄</span> index.ts</div>
+								 </div>
+							 </div>
+													 <div class="vsc-tabs">
+															 <div class="vsc-tab active"><span class="tab-dot" aria-hidden="true"></span><span class="tab-title">app.ts</span><span class="tab-close" aria-hidden="true">×</span></div>
+															 <div class="vsc-tab"><span class="tab-title">utils.ts</span><span class="tab-close" aria-hidden="true">×</span></div>
+															 <div class="vsc-tab"><span class="tab-title">index.ts</span><span class="tab-close" aria-hidden="true">×</span></div>
+													 </div>
+													 <div class="vsc-breadcrumbs">
+															 <span class="crumb">workspace</span>
+															 <span class="crumb-sep">›</span>
+															 <span class="crumb">src</span>
+															 <span class="crumb-sep">›</span>
+															 <span class="crumb active">app.ts</span>
+													 </div>
+							 <div id="editor" class="editor-area">
+								 <div class="gutter">1<br>2<br>3<br>4<br>5</div>
+								 <div class="code-area">
+									 <div class="active-line"></div>
+									 <div class="selection"></div>
+									 <div class="cursor"></div>
+									 <pre id="code-sample"><code>
 <span class="tok-0">function</span> <span class="tok-1">demo</span>() { <span class="tok-2">console</span>.<span class="tok-3">log</span>(<span class="tok-4">'Hello theme'</span>); }
-				</code></pre>
-			</div>
-		</div>
-	</section>
+									 </code></pre>
+								 </div>
+															 <div class="minimap">
+																 <div class="minimap-track">
+																	 <div class="minimap-viewport"></div>
+																 </div>
+															 </div>
+							 </div>
+													 <div class="vsc-notification animate-in">🔔 Build completed successfully.</div>
+													 <div class="vsc-bottom-panel">
+														 <div class="vsc-bottom-tabs">
+															 <div class="vsc-bottom-tab active">PROBLEMS</div>
+															 <div class="vsc-bottom-tab">OUTPUT</div>
+															 <div class="vsc-bottom-tab">TERMINAL</div>
+														 </div>
+														 <div class="vsc-bottom-content">
+															 <div class="vsc-problem-item">src/app.ts(12,5): Missing semicolon.</div>
+															 <div class="vsc-problem-item">src/utils.ts(3,10): Unused variable.</div>
+														 </div>
+													 </div>
+						 </div>
+					 </div>
+					 <div class="vsc-statusbar"><span>Ln 12, Col 8</span><span>UTF-8</span><span>LF</span><span>TypeScript</span></div>
+				 </div>
+			 </section>
 	<section class="demo" id="demo-panels" style="display:none">
 		<div class="panel-surface">
 			<div style="font-weight:600;margin-bottom:6px">Panel Title</div>
@@ -701,10 +1033,10 @@ function getDemosHtml() {
 		</div>
 	</section>
 	<section class="demo" id="demo-terminal" style="display:none">
-		<div class="terminal">PS E:\> npm run build\nwebpack 5 compiling... done</div>
+		<div class="terminal">PS E:&gt; npm run build<br>webpack 5 compiling... done</div>
 	</section>
 	<section class="demo" id="demo-notifications" style="display:none">
-		<div class="notification">Build completed successfully.</div>
+		<div class="notification animate-in">Build completed successfully.</div>
 	</section>
 	<section class="demo" id="demo-statusbar" style="display:none">
 		<div class="statusbar"><span>Ln 12, Col 8</span><span>UTF-8</span><span>LF</span><span>TypeScript</span></div>
@@ -754,6 +1086,13 @@ function mergeSemanticRules(
 
 // boot
 document.addEventListener("DOMContentLoaded", () => {
+	// Save Theme button wiring
+	document.addEventListener("click", (e) => {
+		const btn = (e.target as HTMLElement).closest("#btn-save-theme");
+		if (btn) {
+			vscode.postMessage({ type: "REQUEST_SAVE_THEME", payload: model });
+		}
+	});
 	// Toolbar wiring
 	const byId = (id: string) =>
 		document.getElementById(id) as HTMLButtonElement | null;
@@ -781,6 +1120,30 @@ document.addEventListener("DOMContentLoaded", () => {
 	byId("btn-export-vsix")?.addEventListener("click", () =>
 		vscode.postMessage({ type: "REQUEST_EXPORT_VSIX" })
 	);
+	// Expand/collapse description toggles
+	document.addEventListener("click", (e) => {
+		const t = (e.target as HTMLElement).closest("[data-toggle-desc]");
+		if (!t) return;
+		e.preventDefault();
+		const btn = t as HTMLButtonElement;
+		const row = btn.closest(".row");
+		if (!row) return;
+		const desc = row.querySelector(".desc") as HTMLElement | null;
+		if (!desc) return;
+		const full = desc.getAttribute("data-full") || "";
+		const isExpanded = btn.getAttribute("aria-expanded") === "true";
+		if (isExpanded) {
+			// collapse
+			desc.textContent = renderDescription(full);
+			btn.textContent = "More";
+			btn.setAttribute("aria-expanded", "false");
+		} else {
+			// expand
+			desc.textContent = full;
+			btn.textContent = "Less";
+			btn.setAttribute("aria-expanded", "true");
+		}
+	});
 	document.querySelectorAll(".tab").forEach((t) =>
 		t.addEventListener("click", () => {
 			document

@@ -1,11 +1,16 @@
 {
-	"name": "vsc-design-lab",
+	"name": "vscodedesignlab",
 	"displayName": "VS Code Design Lab",
 	"description": "Two-panel theme editor with live preview, import/export (JSON/JSONC/VSIX), and element locator.",
 	"publisher": "edasevar",
-	"version": "1.2.1",
+	"version": "1.9.1",
 	"engines": {
-		"vscode": "^1.88.0"
+		"vscode": "^1.103.0"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/edasevar/vscodedesignlab.git"
 	},
 	"categories": [
 		"Other"
@@ -27,7 +32,7 @@
 			},
 			{
 				"command": "designLab.useCurrent",
-				"title": "Design Lab: Use Current Settings"
+				"title": "Design Lab: Use Current (Active Theme + Overrides)"
 			},
 			{
 				"command": "designLab.export.json",

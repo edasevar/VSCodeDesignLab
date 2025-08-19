@@ -1,2 +1,4 @@
 node_modules
-*memory.md
+*.vsix
+VSCodeDesignLab_memory.md
+out/**

@@ -5,6 +5,7 @@ import {
 	applyPreview,
 	clearPreview,
 	readCurrentThemeCustomizations,
+	readActiveThemeOrSettingsCombined,
 } from "./preview";
 import { importFromJSON, importFromJSONC } from "./importers/jsonTheme";
 import { parseJSONC } from "./importers/jsonc";
@@ -14,21 +15,35 @@ import { exportCssVars } from "./exporters/cssVars";
 import { exportVsix } from "./exporters/vsix";
 
 export function activate(ctx: vscode.ExtensionContext) {
-	const open = vscode.commands.registerCommand("designLab.open", () => {
-		const panel = vscode.window.createWebviewPanel(
+	// Maintain a single shared panel instance
+	let currentPanel: vscode.WebviewPanel | undefined;
+	const ensurePanel = () => {
+		if (currentPanel) {
+			currentPanel.reveal(vscode.ViewColumn.Active);
+			return currentPanel;
+		}
+		currentPanel = vscode.window.createWebviewPanel(
 			"designLab",
 			"VS Code Design Lab",
 			vscode.ViewColumn.Active,
 			{ enableScripts: true, retainContextWhenHidden: true }
 		);
-		createPanel(panel, ctx);
+		createPanel(currentPanel, ctx);
+		currentPanel.onDidDispose(() => {
+			currentPanel = undefined;
+		});
+		return currentPanel;
+	};
+
+	const open = vscode.commands.registerCommand("designLab.open", () => {
+		ensurePanel();
 	});
 
 	const startBlank = vscode.commands.registerCommand(
 		"designLab.startBlank",
 		async () => {
-			await vscode.commands.executeCommand("designLab.open");
-			vscode.commands.executeCommand("vscode.postToDesignLab", {
+			const panel = ensurePanel();
+			panel.webview.postMessage({
 				type: "LOAD_IMPORTED",
 				payload: { colors: {}, tokenColors: [], semanticTokens: {} },
 			});
@@ -38,14 +53,12 @@ export function activate(ctx: vscode.ExtensionContext) {
 	const useCurrent = vscode.commands.registerCommand(
 		"designLab.useCurrent",
 		async () => {
-			const current = await readCurrentThemeCustomizations();
-			// Send to any open webview
-			vscode.window.visibleTextEditors; // noop; panel messaging handles broadcast
-			vscode.commands.executeCommand("designLab.open").then(() => {
-				vscode.commands.executeCommand("vscode.postToDesignLab", {
-					type: "LOAD_CURRENT",
-					payload: current,
-				});
+			// active theme + any overrides from settings
+			const current = await readActiveThemeOrSettingsCombined();
+			const panel = ensurePanel();
+			panel.webview.postMessage({
+				type: "LOAD_CURRENT",
+				payload: current,
 			});
 		}
 	);
@@ -79,12 +92,8 @@ export function activate(ctx: vscode.ExtensionContext) {
 				payload = importFromJSON(obj);
 			}
 
-			vscode.commands.executeCommand("designLab.open").then(() => {
-				vscode.commands.executeCommand("vscode.postToDesignLab", {
-					type: "LOAD_IMPORTED",
-					payload,
-				});
-			});
+			const panel = ensurePanel();
+			panel.webview.postMessage({ type: "LOAD_IMPORTED", payload });
 		}
 	);
 

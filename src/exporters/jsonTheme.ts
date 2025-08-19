@@ -2,11 +2,6 @@
 import * as vscode from "vscode";
 
 export async function exportThemeJSON() {
-	const data = await vscode.commands.executeCommand<any>(
-		"vscode.postToDesignLab",
-		{ type: "REQUEST_MODEL" }
-	);
-	// webview will respond with a message, but to keep flow simple we ask user to pick save location and the webview will send payload back via APPLY_PREVIEW echo
 	const uri = await vscode.window.showSaveDialog({
 		filters: { "JSON Theme": ["json"] },
 		saveLabel: "Save Theme JSON",
@@ -22,7 +17,20 @@ export async function exportThemeJSON() {
 
 // This is a light shim. In practice you’d keep the model in the extension host or request it from the webview via a promise bridge.
 async function readModel(): Promise<any> {
-	// In MVP, reuse current settings as the source of truth:
+	// Prefer the last model sent from the webview (live preview). If missing, fall back to current settings.
+	try {
+		const m = await vscode.commands.executeCommand<any>(
+			"designLab.getLastModel"
+		);
+		if (m && typeof m === "object") {
+			return {
+				colors: m.colors || {},
+				textMateRules: Array.isArray(m.tokenColors) ? m.tokenColors : [],
+				semanticTokens: m.semanticTokens || {},
+			};
+		}
+	} catch {}
+	// Fallback to current settings
 	const color =
 		vscode.workspace.getConfiguration().get("workbench.colorCustomizations") ||
 		{};
